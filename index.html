@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Korean Alphabet Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap');
+        body { font-family: 'Nunito', sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); min-height: 100vh; display: flex; flex-direction: column;}
+        .login-container { background: white; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); overflow: hidden;}
+        .game-container { display: none; background: white; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);}
+        .tab-active { background-color: #4F46E5; color: white;}
+        .card { perspective: 1000px; height: 150px; cursor: pointer;}
+        .card-inner { position: relative; width: 100%; height: 100%; transition: transform 0.6s; transform-style: preserve-3d;}
+        .card.flipped .card-inner { transform: rotateY(180deg);}
+        .card-front, .card-back { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; display: flex; align-items: center; justify-content: center; border-radius: 0.5rem;}
+        .card-front { background-color: #4F46E5; color: white; font-size: 2.5rem; font-weight: bold;}
+        .card-back { background-color: #E5E7EB; color: #1F2937; transform: rotateY(180deg); font-size: 1.5rem;}
+        .confetti { position: fixed; width: 10px; height: 10px; background-color: #f00; opacity: 0; animation: confetti-fall 3s ease-in-out forwards; z-index: 1000;}
+        @keyframes confetti-fall {
+            0% {transform: translateY(-100vh) rotate(0deg); opacity: 1;}
+            100% {transform: translateY(100vh) rotate(720deg); opacity: 0;}
+        }
+        .progress-bar { height: 10px; background-color: #E5E7EB; border-radius: 5px; overflow: hidden;}
+        .progress { height: 100%; background-color: #4F46E5; transition: width 0.3s ease;}
+        .footer { margin-top: auto; padding: 1rem; text-align: center; background-color: rgba(255, 255, 255, 0.7); border-top: 1px solid #e5e7eb;}
+        .difficulty-badge { position: absolute; top: 10px; right: 10px; padding: 4px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: bold;}
+        .timer { font-size: 1.25rem; font-weight: bold;}
+        .word-container { min-height: 60px; display: flex; align-items: center; justify-content: center;}
+        .syllable-block { display: inline-flex; align-items: center; justify-content: center; width: 60px; height: 60px; margin: 0 5px; border: 2px solid #4F46E5; border-radius: 8px; font-size: 1.75rem;}
+        .matching-game { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;}
+        .matching-card { height: 100px; background-color: #4F46E5; color: white; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; cursor: pointer; transition: background 0.3s;}
+        .matching-card.flipped { transform: rotateY(180deg); background-color: #E5E7EB; color: #1F2937;}
+        .matching-card.matched { background-color: #10B981; pointer-events: none;}
+    </style>
+</head>
+<body class="p-4 md:p-0">
+    <!-- Admin Login Page -->
+    <div id="admin-login-page" class="flex items-center justify-center min-h-screen" style="display:none;">
+      <div class="login-container w-full max-w-md p-8">
+        <div class="text-center mb-8">
+          <h1 class="text-3xl font-bold text-gray-800">Admin Login</h1>
+          <p class="text-gray-600 mt-2">Admin Panel</p>
+        </div>
+        <form id="admin-login-form" class="space-y-4">
+          <div>
+            <label for="admin-email" class="block text-sm font-medium text-gray-700">Email</label>
+            <input type="email" id="admin-email" name="admin-email" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" required>
+          </div>
+          <div>
+            <label for="admin-password" class="block text-sm font-medium text-gray-700">Password</label>
+            <input type="password" id="admin-password" name="admin-password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm" required>
+          </div>
+          <button type="submit" class="w-full flex justify-center py-2 px-4 rounded-md text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">Login as Admin</button>
+          <button type="button" id="back-to-user-login" class="mt-2 w-full flex justify-center py-2 px-4 rounded-md text-sm font-medium bg-gray-200 hover:bg-gray-300">Back to Student Login</button>
+        </form>
+        <div id="admin-login-message" class="text-center mt-4 text-red-600"></div>
+      </div>
+    </div>
+    <!-- Student Login Page -->
+    <div id="login-page" class="flex items-center justify-center min-h-screen">
+        <div class="login-container w-full max-w-md p-8">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-800">한글 게임</h1>
+                <p class="text-gray-600 mt-2">SPFL - FPFMNHS</p>
+            </div>
+            <div class="mb-6">
+               <svg class="w-32 h-32 mx-auto" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="circleClip">
+      <circle cx="50" cy="50" r="45" />
+    </clipPath>
+  </defs>
+  <circle cx="50" cy="50" r="45" fill="#4F46E5" />
+  <image 
+    href="Logo/FPFelixLogo.png" 
+    x="5" y="5" width="90" height="90"
+    clip-path="url(#circleClip)"
+    preserveAspectRatio="xMidYMid slice"
+  />
+</svg>
+            </div>
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+                    <input type="email" id="email" name="email" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" required>
+                </div>
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+                    <input type="password" id="password" name="password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" required>
+                </div>
+                <div>
+                    <label for="grade" class="block text-sm font-medium text-gray-700">Grade</label>
+                    <select id="grade" name="grade" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="7">Grade 7</option>
+                    </select>
+                </div>
+                <div class="flex gap-2">
+                    <button type="submit" class="w-1/2 flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none">
+                        Login
+                    </button>
+                    <button type="button" id="register-btn" class="w-1/2 flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none">
+                        Register
+                    </button>
+                </div>
+                <!-- Admin Login Button -->
+                <button type="button" id="admin-login-btn" class="w-full mt-2 py-2 px-4 rounded-md text-sm font-medium bg-gray-200 hover:bg-gray-300">
+                  Admin Login
+                </button>
+            </form>
+            <div id="login-message" class="text-center mt-4 text-red-600"></div>
+        </div>
+        <footer class="fixed bottom-0 w-full py-3 bg-white bg-opacity-90 border-t border-gray-200 text-center">
+            <p class="text-gray-700">© 2025 Francisco P. Felix Memorial National High School</p>
+        </footer>
+    </div>
+    <!-- Game Page -->
+    <!-- ... [The full game HTML as previously provided] ... -->
+    <div id="game-page" class="game-container max-w-4xl mx-auto p-4 md:p-8 my-8" style="display:none;">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-800">Korean Alphabet Game</h1>
+            <p id="welcome-message" class="text-gray-600">Welcome, Student!</p>
+            <div id="difficulty-indicator" class="mt-1 inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                Grade 7 - Expert
+            </div>
+        </div>
+        <button id="logout-btn" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-md text-sm font-medium">
+            Logout
+        </button>
+    </div>
+    <div class="mb-6">
+        <div class="flex space-x-2 mb-2">
+            <div id="tab-vowels" class="tab-active px-4 py-2 rounded-t-lg cursor-pointer flex-1 text-center">
+                Vowels (모음)
+            </div>
+            <div id="tab-consonants" class="px-4 py-2 rounded-t-lg cursor-pointer bg-gray-100 flex-1 text-center">
+                Consonants (자음)
+            </div>
+        </div>
+        <div class="bg-gray-100 p-4 rounded-b-lg">
+            <div class="flex justify-between items-center mb-4">
+                <div class="text-lg font-semibold" id="current-mode">Vowels Mode</div>
+                <div class="flex items-center">
+                    <span class="mr-2">Progress:</span>
+                    <div class="progress-bar w-32">
+                        <div id="progress" class="progress" style="width: 0%"></div>
+                    </div>
+                    <span id="score" class="ml-2">0/0</span>
+                </div>
+            </div>
+            <div id="game-instructions" class="mb-4 p-3 bg-blue-50 text-blue-800 rounded-md">
+                Click on each card to learn Korean vowels. Try to memorize them all!
+            </div>
+            <!-- Timer for higher grades -->
+            <div id="timer-container" class="mb-4 text-center hidden">
+                <div class="timer p-2 bg-yellow-100 text-yellow-800 rounded-md inline-block">
+                    Time: <span id="timer">00:00</span>
+                </div>
+            </div>
+            <!-- Game Content Area -->
+            <div id="vowels-content" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <!-- Vowels cards will be generated here -->
+            </div>
+            <div id="consonants-content" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4" style="display: none;">
+                <!-- Consonants cards will be generated here -->
+            </div>
+            <!-- Matching Game (Grade 7) -->
+            <div id="matching-game" class="mt-6" style="display: none;">
+                <div class="bg-purple-50 p-4 rounded-md mb-4">
+                    <h3 class="font-bold text-lg mb-2">Memory Matching Game</h3>
+                    <p>Match Korean characters with their correct pronunciation:</p>
+                </div>
+                <div id="matching-grid" class="matching-game">
+                    <!-- Matching cards will be generated here -->
+                </div>
+            </div>
+            <!-- Quiz Area -->
+            <div id="quiz-area" class="mt-6" style="display: none;">
+                <div class="bg-yellow-50 p-4 rounded-md mb-4">
+                    <h3 class="font-bold text-lg mb-2">Quiz Time!</h3>
+                    <p id="quiz-question">Match the Korean character with its correct pronunciation:</p>
+                </div>
+                <div class="flex flex-col items-center">
+                    <div id="quiz-character" class="text-5xl font-bold mb-4">ㅏ</div>
+                    <div id="quiz-options" class="grid grid-cols-2 gap-3 w-full max-w-md">
+                        <!-- Quiz options will be generated here -->
+                    </div>
+                </div>
+            </div>
+            <!-- Results Area -->
+            <div id="results-area" class="mt-6 text-center" style="display: none;">
+                <h3 class="font-bold text-xl mb-2">Great Job!</h3>
+                <p id="final-score" class="text-lg mb-4">Your score: 0/0</p>
+                <div class="flex justify-center space-x-4">
+                    <button id="restart-btn" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                        Try Again
+                    </button>
+                    <button id="switch-mode-btn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">
+                        Try Consonants
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Footer for Game Page -->
+    <footer class="mt-8 py-4 border-t border-gray-200 text-center">
+        <p class="text-gray-700">© 2025 Francisco P. Felix Memorial National High School</p>
+    </footer>
+</div>
+    </div>
+    <!-- Admin Dashboard Page -->
+    <div id="admin-page" class="game-container max-w-4xl mx-auto p-4 md:p-8 my-8" style="display:none;">
+      <h2 class="text-2xl font-bold mb-4">Student Progress Dashboard</h2>
+      <table class="min-w-full bg-white">
+        <thead>
+          <tr>
+            <th class="py-2 px-4 border-b">Student Email</th>
+            <th class="py-2 px-4 border-b">Grade</th>
+            <th class="py-2 px-4 border-b">Lessons Completed</th>
+            <th class="py-2 px-4 border-b">Quiz Score</th>
+          </tr>
+        </thead>
+        <tbody id="students-progress-table">
+          <!-- Rows will be generated here -->
+        </tbody>
+      </table>
+      <button id="admin-logout-btn" class="mt-6 px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-md text-sm font-medium">
+        Logout
+      </button>
+    </div>
+    <script>
+    // --- Firebase Setup ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyCzPN25sXmaDuh_f_6tWQTTj6ykOi1yP4Y",
+      authDomain: "spfl-672c4.firebaseapp.com",
+      projectId: "spfl-672c4",
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // --- UI Variables ---
+    const loginPage = document.getElementById("login-page");
+    const gamePage = document.getElementById("game-page");
+    const loginForm = document.getElementById("login-form");
+    const registerBtn = document.getElementById("register-btn");
+    const loginMessage = document.getElementById("login-message");
+    const logoutBtn = document.getElementById("logout-btn");
+    const welcomeMessage = document.getElementById("welcome-message");
+    const difficultyIndicator = document.getElementById("difficulty-indicator");
+
+    // --- Admin UI Variables ---
+    const adminLoginBtn = document.getElementById('admin-login-btn');
+    const adminLoginPage = document.getElementById('admin-login-page');
+    const adminLoginForm = document.getElementById('admin-login-form');
+    const adminLoginMessage = document.getElementById('admin-login-message');
+    const backToUserLogin = document.getElementById('back-to-user-login');
+    const adminPage = document.getElementById('admin-page');
+    const studentsProgressTable = document.getElementById('students-progress-table');
+    const adminLogoutBtn = document.getElementById('admin-logout-btn');
+
+    // --- Game State ---
+    let username = "";
+    let userGrade = 7;
+    let userUID = "";
+    let learnedCards = 0;
+    let quizScore = 0;
+
+    // --- Admin Navigation ---
+    adminLoginBtn.addEventListener('click', function() {
+      loginPage.style.display = "none";
+      adminLoginPage.style.display = "flex";
+    });
+
+    backToUserLogin.addEventListener('click', function() {
+      adminLoginPage.style.display = "none";
+      loginPage.style.display = "flex";
+    });
+
+    adminLoginForm.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      adminLoginMessage.textContent = "";
+      const email = document.getElementById('admin-email').value.trim();
+      const password = document.getElementById('admin-password').value;
+      try {
+        const result = await auth.signInWithEmailAndPassword(email, password);
+        const userUID = result.user.uid;
+        const userDoc = await db.collection('users').doc(userUID).get();
+        if (userDoc.exists && userDoc.data().role === 'admin') {
+          adminLoginPage.style.display = "none";
+          adminPage.style.display = "block";
+          loadAllStudentProgress();
+        } else {
+          adminLoginMessage.textContent = "You are not authorized as admin.";
+          auth.signOut();
+        }
+      } catch (error) {
+        adminLoginMessage.textContent = error.message;
+      }
+    });
+
+    adminLogoutBtn.addEventListener('click', function() {
+      auth.signOut().then(() => {
+        adminPage.style.display = "none";
+        loginPage.style.display = "flex";
+      });
+    });
+
+    async function loadAllStudentProgress() {
+      studentsProgressTable.innerHTML = '<tr><td colspan="4" class="p-4 text-center">Loading...</td></tr>';
+      const usersSnap = await db.collection('users').where('role', '==', 'student').get();
+      let rows = '';
+      for (const doc of usersSnap.docs) {
+        const userData = doc.data();
+        const progressDoc = await db.collection('progress').doc(doc.id).get();
+        const progress = progressDoc.exists ? progressDoc.data() : {};
+        rows += `<tr>
+          <td class="py-2 px-4 border-b">${userData.username || '(no username)'}</td>
+          <td class="py-2 px-4 border-b">${userData.grade || ''}</td>
+          <td class="py-2 px-4 border-b">${progress.lessonsCompleted || 0}</td>
+          <td class="py-2 px-4 border-b">${progress.score || 0}</td>
+        </tr>`;
+      }
+      studentsProgressTable.innerHTML = rows;
+    }
+
+    // --- Student Login/Register and Game Launch ---
+    loginForm.addEventListener("submit", async function(e) {
+      e.preventDefault();
+      loginMessage.textContent = "";
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      userGrade = document.getElementById("grade").value;
+      try {
+          const result = await auth.signInWithEmailAndPassword(email, password);
+          userUID = result.user.uid;
+          const userDoc = await db.collection('users').doc(userUID).get();
+          username = userDoc.data()?.username || email.split("@")[0];
+          userGrade = userDoc.data()?.grade || userGrade;
+          // Only allow grade 7 students (unless admin)
+          if (userDoc.data()?.role === "admin") {
+            loginPage.style.display = "none";
+            adminPage.style.display = "block";
+            loadAllStudentProgress();
+            return;
+          }
+          if (userGrade !== "7") {
+            loginMessage.textContent = "Only Grade 7 students are allowed.";
+            auth.signOut();
+            return;
+          }
+          welcomeMessage.textContent = `Welcome, ${username}!`;
+          await loadOrInitProgress();
+          loginPage.style.display = "none";
+          gamePage.style.display = "block";
+          if (typeof initGame === "function") initGame();
+      } catch (error) {
+          loginMessage.textContent = error.message;
+      }
+    });
+
+    registerBtn.addEventListener("click", async function() {
+      loginMessage.textContent = "";
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      const grade = document.getElementById("grade").value;
+      if (!email || !password) {
+          loginMessage.textContent = "Please provide email and password.";
+          return;
+      }
+      if (grade !== "7") {
+          loginMessage.textContent = "Only Grade 7 students are allowed.";
+          return;
+      }
+      try {
+          const result = await auth.createUserWithEmailAndPassword(email, password);
+          userUID = result.user.uid;
+          username = email.split("@")[0];
+          userGrade = grade;
+          await db.collection('users').doc(userUID).set({
+              username,
+              grade: userGrade,
+              role: "student"
+          });
+          await db.collection('progress').doc(userUID).set({
+              lessonsCompleted: 0,
+              score: 0
+          });
+          loginMessage.textContent = "Registration successful! Please log in.";
+      } catch (error) {
+          loginMessage.textContent = error.message;
+      }
+    });
+
+    document.body.addEventListener("click", function(e) {
+      if (e.target && e.target.id === "logout-btn") {
+          auth.signOut().then(() => {
+              loginPage.style.display = "flex";
+              gamePage.style.display = "none";
+              document.getElementById("email").value = "";
+              document.getElementById("password").value = "";
+              document.getElementById("grade").value = "7";
+              loginMessage.textContent = "";
+              if (typeof resetGame === "function") resetGame();
+          });
+      }
+    });
+
+    // --- Progress Tracking ---
+    async function loadOrInitProgress() {
+        const progressDoc = await db.collection('progress').doc(userUID).get();
+        if (progressDoc.exists) {
+            learnedCards = progressDoc.data().lessonsCompleted || 0;
+            quizScore = progressDoc.data().score || 0;
+        } else {
+            await db.collection('progress').doc(userUID).set({
+                lessonsCompleted: 0,
+                score: 0
+            });
+            learnedCards = 0;
+            quizScore = 0;
+        }
+    }
+    function saveProgress() {
+        db.collection('progress').doc(userUID).set({
+            lessonsCompleted: learnedCards,
+            score: quizScore
+        }, { merge: true });
+    }
+
+    const koreanData = {
+    vowels: [
+        { character: "ㅏ", romanization: "a", sound: "as in 'father'" },
+        { character: "ㅑ", romanization: "ya", sound: "as in 'yard'" },
+        { character: "ㅓ", romanization: "eo", sound: "as in 'sun'" },
+        { character: "ㅕ", romanization: "yeo", sound: "as in 'young'" },
+        { character: "ㅗ", romanization: "o", sound: "as in 'more'" },
+        { character: "ㅛ", romanization: "yo", sound: "as in 'yolk'" },
+        { character: "ㅜ", romanization: "u", sound: "as in 'moon'" },
+        { character: "ㅠ", romanization: "yu", sound: "as in 'you'" },
+        { character: "ㅡ", romanization: "eu", sound: "no English equivalent" },
+        { character: "ㅣ", romanization: "i", sound: "as in 'meet'" },
+        { character: "ㅐ", romanization: "ae", sound: "as in 'cat'" },
+        { character: "ㅒ", romanization: "yae", sound: "as in 'yak'" },
+        { character: "ㅔ", romanization: "e", sound: "as in 'bed'" },
+        { character: "ㅖ", romanization: "ye", sound: "as in 'yes'" },
+        { character: "ㅘ", romanization: "wa", sound: "as in 'water'" },
+        { character: "ㅙ", romanization: "wae", sound: "as in 'way'" },
+        { character: "ㅚ", romanization: "oe", sound: "as in 'weight'" },
+        { character: "ㅝ", romanization: "wo", sound: "as in 'wonder'" },
+        { character: "ㅞ", romanization: "we", sound: "as in 'wet'" },
+        { character: "ㅟ", romanization: "wi", sound: "as in 'week'" },
+        { character: "ㅢ", romanization: "ui", sound: "as in 'we'" }
+    ],
+    consonants: [
+        { character: "ㄱ", romanization: "g/k", sound: "between 'g' and 'k'" },
+        { character: "ㄴ", romanization: "n", sound: "as in 'no'" },
+        { character: "ㄷ", romanization: "d/t", sound: "between 'd' and 't'" },
+        { character: "ㄹ", romanization: "r/l", sound: "between 'r' and 'l'" },
+        { character: "ㅁ", romanization: "m", sound: "as in 'mom'" },
+        { character: "ㅂ", romanization: "b/p", sound: "between 'b' and 'p'" },
+        { character: "ㅅ", romanization: "s", sound: "as in 'see'" },
+        { character: "ㅇ", romanization: "ng", sound: "silent at start, 'ng' at end" },
+        { character: "ㅈ", romanization: "j", sound: "as in 'jump'" },
+        { character: "ㅊ", romanization: "ch", sound: "as in 'cheese'" },
+        { character: "ㅋ", romanization: "k", sound: "strong 'k' sound" },
+        { character: "ㅌ", romanization: "t", sound: "strong 't' sound" },
+        { character: "ㅍ", romanization: "p", sound: "strong 'p' sound" },
+        { character: "ㅎ", romanization: "h", sound: "as in 'hello'" },
+        { character: "ㄲ", romanization: "kk", sound: "tense 'k' sound" },
+        { character: "ㄸ", romanization: "tt", sound: "tense 't' sound" },
+        { character: "ㅃ", romanization: "pp", sound: "tense 'p' sound" },
+        { character: "ㅆ", romanization: "ss", sound: "tense 's' sound" },
+        { character: "ㅉ", romanization: "jj", sound: "tense 'j' sound" }
+    ]
+};
+
+const koreanWords = [
+    { word: "안녕", meaning: "Hello" },
+    { word: "감사", meaning: "Thank you" },
+    { word: "사랑", meaning: "Love" },
+    { word: "친구", meaning: "Friend" },
+    { word: "학교", meaning: "School" },
+    { word: "가족", meaning: "Family" },
+    { word: "음식", meaning: "Food" },
+    { word: "한국", meaning: "Korea" }
+];
+
+// DOM Elements
+const tabVowels = document.getElementById("tab-vowels");
+const tabConsonants = document.getElementById("tab-consonants");
+const currentModeEl = document.getElementById("current-mode");
+const vowelsContent = document.getElementById("vowels-content");
+const consonantsContent = document.getElementById("consonants-content");
+const progressBar = document.getElementById("progress");
+const scoreEl = document.getElementById("score");
+const timerContainer = document.getElementById("timer-container");
+const timerEl = document.getElementById("timer");
+const quizArea = document.getElementById("quiz-area");
+const quizCharacter = document.getElementById("quiz-character");
+const quizOptions = document.getElementById("quiz-options");
+const resultsArea = document.getElementById("results-area");
+const finalScoreEl = document.getElementById("final-score");
+const restartBtn = document.getElementById("restart-btn");
+const switchModeBtn = document.getElementById("switch-mode-btn");
+const gameInstructions = document.getElementById("game-instructions");
+const wordFormation = document.getElementById("word-formation");
+const targetWord = document.getElementById("target-word");
+const characterBank = document.getElementById("character-bank");
+const matchingGame = document.getElementById("matching-game");
+const matchingGrid = document.getElementById("matching-grid");
+
+// Game State
+let currentMode = "vowels";
+let totalCards = 0;
+let quizTotal = 0;
+let currentQuizIndex = 0;
+let quizQuestions = [];
+let timerInterval = null;
+let timerSeconds = 0;
+let matchedPairs = 0;
+let totalPairs = 0;
+let firstCard = null;
+let secondCard = null;
+let canFlip = true;
+
+// Initialization
+function initGame() {
+    setDifficultyByGrade();
+    generateCards(getFilteredData("vowels"), vowelsContent);
+    generateCards(getFilteredData("consonants"), consonantsContent);
+    totalCards = getFilteredData(currentMode).length;
+    updateProgress();
+    initGradeSpecificFeatures();
+}
+
+// Difficulty label
+function setDifficultyByGrade() {
+    difficultyIndicator.textContent = "Grade 7 - Expert";
+}
+
+// Data filtering per grade (only grade 7 now)
+function getFilteredData(type) {
+    return koreanData[type];
+}
+
+// Grade features (only grade 7)
+function initGradeSpecificFeatures() {
+    timerContainer.classList.remove("hidden");
+    startTimer();
+    matchingGame.style.display = "none";
+}
+
+// Card generation
+function generateCards(data, container) {
+    container.innerHTML = "";
+    data.forEach((item, index) => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.dataset.index = index;
+        // All are "Expert" now
+        let difficultyBadge = `<span class="difficulty-badge bg-red-100 text-red-800">Expert</span>`;
+        card.innerHTML = `
+            <div class="card-inner">
+                <div class="card-front">
+                    ${item.character}
+                    ${difficultyBadge}
+                </div>
+                <div class="card-back">
+                    <div class="text-center">
+                        <div class="font-bold">${item.romanization}</div>
+                        <div class="text-sm mt-1">${item.sound}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+        card.addEventListener("click", () => flipCard(card, index));
+        container.appendChild(card);
+    });
+}
+
+// Card flip logic
+function flipCard(card, index) {
+    if (!card.classList.contains("flipped")) {
+        card.classList.add("flipped");
+        learnedCards++;
+        saveProgress();
+        updateProgress();
+        if (learnedCards === totalCards) {
+            setTimeout(() => {
+                startMatchingGame();
+            }, 1000);
+        }
+    }
+}
+
+// Progress bar
+function updateProgress() {
+    const progress = (learnedCards / totalCards) * 100;
+    progressBar.style.width = `${progress}%`;
+    scoreEl.textContent = `${learnedCards}/${totalCards}`;
+}
+
+// Timer
+function startTimer() {
+    clearInterval(timerInterval);
+    timerSeconds = 0;
+    updateTimerDisplay();
+    timerInterval = setInterval(() => {
+        timerSeconds++;
+        updateTimerDisplay();
+    }, 1000);
+}
+
+function updateTimerDisplay() {
+    const minutes = Math.floor(timerSeconds / 60).toString().padStart(2, '0');
+    const seconds = (timerSeconds % 60).toString().padStart(2, '0');
+    timerEl.textContent = `${minutes}:${seconds}`;
+}
+
+// Matching Game (grade 7)
+function startMatchingGame() {
+    document.getElementById(`${currentMode}-content`).style.display = "none";
+    matchingGame.style.display = "block";
+    gameInstructions.textContent = "Find matching pairs of Korean characters and their pronunciations!";
+    const gameData = getFilteredData(currentMode).slice(0, 8);
+    totalPairs = gameData.length;
+    matchedPairs = 0;
+    const pairs = [];
+    gameData.forEach(item => {
+        pairs.push({
+            id: `char-${item.character}`,
+            content: item.character,
+            pairId: item.romanization
+        });
+        pairs.push({
+            id: `rom-${item.romanization}`,
+            content: item.romanization,
+            pairId: item.character
+        });
+    });
+    for (let i = pairs.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pairs[i], pairs[j]] = [pairs[j], pairs[i]];
+    }
+    matchingGrid.innerHTML = "";
+    pairs.forEach(pair => {
+        const card = document.createElement("div");
+        card.className = "matching-card";
+        card.dataset.id = pair.id;
+        card.dataset.pairId = pair.pairId;
+        card.innerHTML = `<div class="card-content">${pair.content}</div>`;
+        card.addEventListener("click", () => flipMatchingCard(card));
+        matchingGrid.appendChild(card);
+    });
+}
+function flipMatchingCard(card) {
+    if (!canFlip || card.classList.contains("flipped") || card.classList.contains("matched")) return;
+    card.classList.add("flipped");
+    if (!firstCard) {
+        firstCard = card; return;
+    }
+    secondCard = card;
+    canFlip = false;
+    checkForMatch();
+}
+function checkForMatch() {
+    const isMatch = 
+        (firstCard.dataset.id.startsWith("char-") && firstCard.dataset.pairId === secondCard.dataset.id.replace("rom-", "")) ||
+        (firstCard.dataset.id.startsWith("rom-") && firstCard.dataset.pairId === secondCard.dataset.id.replace("char-", ""));
+    if (isMatch) {
+        firstCard.classList.add("matched");
+        secondCard.classList.add("matched");
+        matchedPairs++;
+        createConfetti(5);
+        resetCards();
+        if (matchedPairs === totalPairs) {
+            setTimeout(() => { createConfetti(); startQuiz(); }, 1000);
+        }
+    } else {
+        setTimeout(() => {
+            firstCard.classList.remove("flipped");
+            secondCard.classList.remove("flipped");
+            resetCards();
+        }, 1000);
+    }
+}
+function resetCards() {
+    firstCard = null;
+    secondCard = null;
+    canFlip = true;
+}
+
+// Quiz
+function startQuiz() {
+    clearInterval(timerInterval);
+    document.getElementById(`${currentMode}-content`).style.display = "none";
+    matchingGame.style.display = "none";
+    quizArea.style.display = "block";
+    gameInstructions.textContent = "Choose the correct pronunciation for each Korean character!";
+    generateQuizQuestions();
+    showNextQuizQuestion();
+}
+function generateQuizQuestions() {
+    quizQuestions = [...getFilteredData(currentMode)];
+    for (let i = quizQuestions.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [quizQuestions[i], quizQuestions[j]] = [quizQuestions[j], quizQuestions[i]];
+    }
+    currentQuizIndex = 0;
+    quizScore = 0;
+    quizTotal = 0;
+}
+function showNextQuizQuestion() {
+    if (currentQuizIndex >= quizQuestions.length) {
+        showResults();
+        return;
+    }
+    const currentQuestion = quizQuestions[currentQuizIndex];
+    quizCharacter.textContent = currentQuestion.character;
+    const options = [currentQuestion.romanization];
+    const allOptions = getFilteredData(currentMode).map(item => item.romanization);
+    const numOptions = 4;
+    while (options.length < numOptions) {
+        const randomOption = allOptions[Math.floor(Math.random() * allOptions.length)];
+        if (!options.includes(randomOption)) options.push(randomOption);
+    }
+    for (let i = options.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [options[i], options[j]] = [options[j], options[i]];
+    }
+    quizOptions.innerHTML = "";
+    options.forEach(option => {
+        const button = document.createElement("button");
+        button.className = "p-3 bg-white border border-gray-300 rounded-md hover:bg-gray-50";
+        button.textContent = option;
+        button.addEventListener("click", () => checkAnswer(option, currentQuestion.romanization));
+        quizOptions.appendChild(button);
+    });
+    currentQuizIndex++;
+}
+function checkAnswer(selectedOption, correctOption) {
+    quizTotal++;
+    if (selectedOption === correctOption) {
+        quizScore++;
+        saveProgress();
+        createConfetti();
+    }
+    setTimeout(() => { showNextQuizQuestion(); }, 500);
+}
+function showResults() {
+    quizArea.style.display = "none";
+    resultsArea.style.display = "block";
+    finalScoreEl.textContent = `Your score: ${quizScore}/${quizTotal}`;
+    if (currentMode === "vowels") {
+        switchModeBtn.textContent = "Try Consonants";
+    } else {
+        switchModeBtn.textContent = "Try Vowels";
+    }
+}
+
+// Confetti
+function createConfetti(count = 30) {
+    for (let i = 0; i < count; i++) {
+        const confetti = document.createElement("div");
+        confetti.className = "confetti";
+        confetti.style.left = `${Math.random() * 100}%`;
+        confetti.style.backgroundColor = getRandomColor();
+        confetti.style.animationDuration = `${Math.random() * 2 + 1}s`;
+        document.body.appendChild(confetti);
+        setTimeout(() => { confetti.remove(); }, 3000);
+    }
+}
+function getRandomColor() {
+    const colors = ["#FF5252", "#FF4081", "#E040FB", "#7C4DFF", "#536DFE", "#448AFF", "#40C4FF", "#18FFFF", "#64FFDA", "#69F0AE", "#B2FF59", "#EEFF41", "#FFFF00", "#FFD740", "#FFAB40", "#FF6E40"];
+    return colors[Math.floor(Math.random() * colors.length)];
+}
+
+// Reset
+function resetGame() {
+    learnedCards = 0;
+    saveProgress();
+    document.querySelectorAll(".card").forEach(card => {
+        card.classList.remove("flipped");
+    });
+    document.getElementById(`${currentMode}-content`).style.display = "grid";
+    quizArea.style.display = "none";
+    resultsArea.style.display = "none";
+    matchingGame.style.display = "none";
+    gameInstructions.textContent = `Click on each card to learn Korean ${currentMode}. Try to memorize them all!`;
+    startTimer();
+    updateProgress();
+}
+
+// Mode switch
+function switchMode() {
+    currentMode = currentMode === "vowels" ? "consonants" : "vowels";
+    if (currentMode === "vowels") {
+        tabVowels.classList.add("tab-active");
+        tabVowels.classList.remove("bg-gray-100");
+        tabConsonants.classList.remove("tab-active");
+        tabConsonants.classList.add("bg-gray-100");
+        vowelsContent.style.display = "grid";
+        consonantsContent.style.display = "none";
+        currentModeEl.textContent = "Vowels Mode";
+    } else {
+        tabConsonants.classList.add("tab-active");
+        tabConsonants.classList.remove("bg-gray-100");
+        tabVowels.classList.remove("tab-active");
+        tabVowels.classList.add("bg-gray-100");
+        consonantsContent.style.display = "grid";
+        vowelsContent.style.display = "none";
+        currentModeEl.textContent = "Consonants Mode";
+    }
+    totalCards = getFilteredData(currentMode).length;
+    resetGame();
+}
+
+// --- EVENT LISTENERS (Attach at root, not inside any function) ---
+tabVowels.addEventListener("click", function() {
+    if (currentMode !== "vowels") {
+        switchMode();
+    }
+});
+tabConsonants.addEventListener("click", function() {
+    if (currentMode !== "consonants") {
+        switchMode();
+    }
+});
+restartBtn.addEventListener("click", resetGame);
+switchModeBtn.addEventListener("click", function() {
+    switchMode();
+});
+    </script>
+</body>
+</html>
